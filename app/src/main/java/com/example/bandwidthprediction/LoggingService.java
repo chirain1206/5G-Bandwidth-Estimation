@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
 import android.telephony.CellIdentityLte;
 import android.telephony.CellIdentityNr;
 import android.telephony.CellInfo;
@@ -41,19 +42,27 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 
 public class LoggingService extends Service {
     private static final String CHANNEL_ID = "BandwidthLogServiceChannel";
     private static final int NOTIFICATION_ID = 1;
     private static final int LOG_INTERVAL = 500; // 500ms
+    private static final String DL_URL = "http://<VM-IP>/big.bin";              // nginx
+    private static final String UL_URL = "http://<VM-IP>:8081/upload-sink";     // FastAPI
+    private static final int PROBE_STREAMS = 4;     // parallel connections per phase
+    private static final int PROBE_SECONDS = 10;    // duration per phase
+    private volatile boolean probeRunning = false;
     private Handler handler;
     private Runnable logTask;
     private File logFile;
@@ -66,6 +75,7 @@ public class LoggingService extends Service {
     private long lastRxBytes = 0;
     private long lastTxBytes = 0;
     private long lastBandwidthCheckTime = 0;
+    private CsvWriter csvWriter;
 
     private final List<Long> recentRxRates = new ArrayList<>();
     private final List<Long> recentTxRates = new ArrayList<>();
@@ -84,6 +94,22 @@ public class LoggingService extends Service {
         handler = new Handler(Looper.getMainLooper());
         File dir = getExternalFilesDir(null);
         logFile = new File(dir, "bandwidth_traces.csv");
+
+        // Initialize CSV writer
+        try {
+            csvWriter = new CsvWriter(getApplicationContext(), "bandwidth_traces.csv");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        try {
+            csvWriter.writeHeader(
+                    "timestamp", "latitude", "longitude", "speed", "carrier", "network type",
+                    "rssi(dBm)", "rsrp(dBm)", "rsrq(dB)", "snr(dB)", "cell id",
+                    "downlink avg(Mbps)", "download variation(Mbps)", "uplink avg(Mbps)", "uplink var(Mbps)",
+                    "battery level", "application utilization");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         // Initialize location manager
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
@@ -118,9 +144,10 @@ public class LoggingService extends Service {
         // Write header if file is empty
         if (!logFile.exists()) {
             try (FileWriter writer = new FileWriter(logFile, true)) {
-                writer.write("timestamp, latitude, longitude, speed, carrier, network type," +
-                        " rssi(dBm), rsrp(dBm), rsrq(dB), snr(dB), cell id," +
-                        " downlink avg(Mbps), download variation(Mbps), uplink avg(Mbps), uplink var(Mbps)\n");
+                writer.append("timestamp,latitude,longitude,speed,carrier,network type," +
+                        "rssi(dBm),rsrp(dBm),rsrq(dB),snr(dB),cell id," +
+                        "downlink avg(Mbps),download variation(Mbps),uplink avg(Mbps),uplink var(Mbps)," +
+                        "battery level,application utilization\n");
             } catch (IOException e) {
                 Log.e("Logger", "Failed to write header", e);
             }
@@ -130,8 +157,14 @@ public class LoggingService extends Service {
         logTask = new Runnable() {
             @Override
             public void run() {
-                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
-                        .format(new Date());
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US);
+//                String timestamp = sdf.format(new Date());
+
+                // debug
+                Calendar cal = Calendar.getInstance();
+                cal.add(Calendar.DAY_OF_MONTH, -4);
+                String timestamp = sdf.format(cal.getTime());
+
                 String[] gpsData = getGpsData();
                 String[] netData = getCarrierAndNetworkType();
                 String[] signalData = getSignalMetrics();
@@ -152,6 +185,13 @@ public class LoggingService extends Service {
                 } catch (IOException e) {
                     Log.e("Logger", "Write failed", e);
                 }
+//                try{
+//                    csvWriter.writeRow(timestamp, gpsData[0], gpsData[1], gpsData[2], netData[0], netData[1],
+//                            signalData[0], signalData[1], signalData[2], signalData[3], cellId,
+//                            bw[0], bw[1], bw[2], bw[3]);
+//                } catch (IOException e) {
+//                    throw new RuntimeException(e);
+//                }
 
                 handler.postDelayed(this, LOG_INTERVAL);
             }
@@ -372,33 +412,99 @@ public class LoggingService extends Service {
         };
     }
 
-    private float testDownloadSpeed() {
+    private void runActiveProbeCycle() {
         try {
-            URL url = new URL("https://speed.hetzner.de/100MB.bin"); // example file
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setUseCaches(false);
-            connection.connect();
+            // 1) DOWNLOAD PHASE
+            runDownloadPhase(DL_URL, PROBE_STREAMS, PROBE_SECONDS);
 
-            InputStream input = connection.getInputStream();
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            long totalBytes = 0;
-            long startTime = System.currentTimeMillis();
+            // 2) UPLOAD PHASE
+            runUploadPhase(UL_URL, PROBE_STREAMS, PROBE_SECONDS);
 
-            while ((bytesRead = input.read(buffer)) != -1 && totalBytes < 1024 * 1024) {
-                totalBytes += bytesRead;
-            }
-
-            long elapsedTime = System.currentTimeMillis() - startTime;
-            input.close();
-            connection.disconnect();
-
-            float speedKbps = (totalBytes / 1024f) / (elapsedTime / 1000f) * 8f;
-            return speedKbps;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return -1;
+        } finally {
+            probeRunning = false;
         }
+    }
+
+    // --------- DOWNLOAD PHASE ----------
+    private void runDownloadPhase(String url, int streams, int seconds) {
+        CountDownLatch latch = new CountDownLatch(streams);
+        long deadline = System.currentTimeMillis() + seconds * 1000L;
+
+        for (int s = 0; s < streams; s++) {
+            new Thread(() -> {
+                byte[] buf = new byte[64 * 1024];
+                while (System.currentTimeMillis() < deadline) {
+                    HttpURLConnection conn = null;
+                    InputStream in = null;
+                    try {
+                        conn = (HttpURLConnection) new URL(url).openConnection();
+                        conn.setUseCaches(false);
+                        conn.setRequestProperty("Cache-Control", "no-cache");
+                        conn.setRequestProperty("Pragma", "no-cache");
+                        conn.setConnectTimeout(8000);
+                        conn.setReadTimeout(8000);
+                        conn.connect();
+                        in = conn.getInputStream();
+
+                        int r;
+                        while ((r = in.read(buf)) != -1) {
+                            if (System.currentTimeMillis() >= deadline) break;
+                            // discard bytes; UID counters will reflect received data
+                        }
+                    } catch (Exception ignored) {
+                    } finally {
+                        try { if (in != null) in.close(); } catch (Exception ignored) {}
+                        if (conn != null) conn.disconnect();
+                    }
+                }
+                latch.countDown();
+            }, "DL-" + s).start();
+        }
+
+        try { latch.await(); } catch (InterruptedException ignored) {}
+    }
+
+    // --------- UPLOAD PHASE ----------
+    private void runUploadPhase(String url, int streams, int seconds) {
+        CountDownLatch latch = new CountDownLatch(streams);
+        long deadline = System.currentTimeMillis() + seconds * 1000L;
+
+        for (int s = 0; s < streams; s++) {
+            new Thread(() -> {
+                byte[] buf = new byte[64 * 1024];
+                while (System.currentTimeMillis() < deadline) {
+                    HttpURLConnection conn = null;
+                    OutputStream out = null;
+                    try {
+                        conn = (HttpURLConnection) new URL(url).openConnection();
+                        conn.setUseCaches(false);
+                        conn.setRequestMethod("POST");
+                        conn.setDoOutput(true);
+                        // Chunked streaming lets us send arbitrary length
+                        conn.setChunkedStreamingMode(64 * 1024);
+                        conn.setRequestProperty("Content-Type", "application/octet-stream");
+                        conn.setConnectTimeout(8000);
+                        conn.setReadTimeout(8000);
+                        conn.connect();
+
+                        out = conn.getOutputStream();
+                        while (System.currentTimeMillis() < deadline) {
+                            out.write(buf);
+                            out.flush();
+                        }
+                        // We expect 204; read/ignore response
+                        try { conn.getInputStream().close(); } catch (Exception ignored) {}
+
+                    } catch (Exception ignored) {
+                    } finally {
+                        try { if (out != null) out.close(); } catch (Exception ignored) {}
+                        if (conn != null) conn.disconnect();
+                    }
+                }
+                latch.countDown();
+            }, "UL-" + s).start();
+        }
+
+        try { latch.await(); } catch (InterruptedException ignored) {}
     }
 }
