@@ -1,8 +1,9 @@
-# BandwidthPrediction — 5G 网络带宽测量与信号数据采集
+# BandwidthPrediction — 5G 网络带宽测量与信号数据采集（Android 端）
+
+> 📦 本目录是 [5G-Bandwidth-Estimation](../README.md) 仓库的 **Android 采集端**。完整的「数据采集 → 预处理 → XGBoost/LSTM 基线 → LLM 残差预测 → 评估」流程见仓库根目录 README。
 
 ![Android](https://img.shields.io/badge/Android-15%2B-3DDC84?logo=android)
 ![Java](https://img.shields.io/badge/Java-11-007396?logo=openjdk)
-![License](https://img.shields.io/badge/License-MIT-green)
 
 > A field measurement tool for 5G bandwidth estimation research: it actively probes uplink/downlink throughput while logging radio signal metrics (LTE/NR RSRP, RSRQ, SINR, CQI, cell identity), GPS, and carrier information at 1 Hz into CSV traces.
 
@@ -119,7 +120,7 @@ App 使用 HTTP 明文协议（Manifest 已开启 `usesCleartextTraffic`），�
 ## 项目结构
 
 ```
-BandwidthPrediction/
+android/                                 # 本目录（Android 采集端）
 ├── app/
 │   └── src/main/
 │       ├── java/com/example/bandwidthprediction/
