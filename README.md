@@ -143,5 +143,5 @@ python scripts/cot/process_merge_cot.py
 ## 已知限制
 
 - LLM 微调需要约 24GB+ 显存（4-bit QLoRA 8B 模型）或云 GPU；
-- 评估 CSVs 中的 `qwen` 系列为实验期间的 Qwen 模型对比结果，对应训练脚本未包含在本仓库；
+- 评估 CSVs 中的 `qwen` 系列为实验期间的 Qwen 模型对比结果，对应训练脚本未包含在本仓库；`lstm_result/` 目录同样只含 LSTM 评估输出，训练脚本未收录；
 - 原始数据未公开，仓库中的结果图表为实验期产物，无法仅凭本仓库文件重新生成全部图表。
