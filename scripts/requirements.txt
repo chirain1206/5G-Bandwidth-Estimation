@@ -1,0 +1,30 @@
+# 数据处理
+pandas
+numpy
+scikit-learn
+
+# 基线模型
+xgboost
+
+# 可视化
+matplotlib
+seaborn
+folium
+branca
+
+# LLM 微调与评估（GPU 环境）
+torch
+transformers
+peft
+trl
+datasets
+bitsandbytes
+accelerate
+
+# CoT 生成
+google-generativeai
+tqdm
+
+# 打流服务端
+fastapi
+uvicorn[standard]
