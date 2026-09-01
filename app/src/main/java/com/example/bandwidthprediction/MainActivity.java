@@ -3,35 +3,26 @@ package com.example.bandwidthprediction;
 import android.Manifest;
 import android.content.Intent;
 
-import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
 import android.graphics.Color;
-import android.widget.Toast;
+import android.widget.RadioGroup;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "LogToggle";
     private static final int PERMISSION_REQUEST_CODE = 1234;
     private final String[] requiredPermissions = {
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -41,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean isLogging = false;
     private Button logToggleButton;
+    private RadioGroup logMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,25 +41,51 @@ public class MainActivity extends AppCompatActivity {
         logToggleButton = findViewById(R.id.logToggleButton);
         logToggleButton.setText("Start Logging");
         logToggleButton.setBackgroundColor(Color.GREEN);
-
-//        ActivityCompat.requestPermissions(this,
-//                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-//                PERMISSION_REQUEST_CODE);
+        logMode = findViewById(R.id.logMode);
 
         checkAllPermissionsAndStart();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            }
+        }
 
         logToggleButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (!isLogging) {
+                    String selectedMode = "down";
+                    int selectedId = logMode.getCheckedRadioButtonId();
+                    if (selectedId == R.id.rbUplink) {
+                        selectedMode = "up";
+                    }
+
+                    // Start service
                     Intent serviceIntent = new Intent(MainActivity.this, LoggingService.class);
+                    serviceIntent.putExtra("LOG_MODE", selectedMode);
                     ContextCompat.startForegroundService(MainActivity.this, serviceIntent);
+
+                    // UI change
                     logToggleButton.setText("Stop Logging");
                     logToggleButton.setBackgroundColor(Color.RED);
+                    // Disable change of radio buttons
+                    for (int i = 0; i < logMode.getChildCount(); i++) {
+                        logMode.getChildAt(i).setEnabled(false);
+                    }
                 } else {
+                    // Stop service
                     stopService(new Intent(MainActivity.this, LoggingService.class));
+
+                    // UI change
                     logToggleButton.setText("Start Logging");
                     logToggleButton.setBackgroundColor(Color.GREEN);
+                    // Enable change of radio buttons
+                    for (int i = 0; i < logMode.getChildCount(); i++) {
+                        logMode.getChildAt(i).setEnabled(true);
+                    }
                 }
                 isLogging = !isLogging;
             }
@@ -80,35 +98,6 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
-//    @Override
-//    public void onRequestPermissionsResult(int requestCode,
-//                                           @NonNull String[] permissions,
-//                                           @NonNull int[] grantResults) {
-//        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-//
-//        if (requestCode == PERMISSION_REQUEST_CODE) {
-//            boolean allGranted = true;
-//            for (int result : grantResults) {
-//                if (result != PackageManager.PERMISSION_GRANTED) {
-//                    allGranted = false;
-//                    break;
-//                }
-//            }
-//
-//            if (allGranted) {
-//                checkAllPermissionsAndStart(); // include MANAGE_EXTERNAL_STORAGE check
-//            } else {
-//                Toast.makeText(this, "Permissions denied. Closing app.", Toast.LENGTH_LONG).show();
-//
-//                // Gracefully close app
-//                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-//                    finishAffinity(); // Close all activities
-//                    System.exit(0);   // Terminate process
-//                }, 2000); // Short delay to let Toast display
-//            }
-//        }
-//    }
-
     private void checkAllPermissionsAndStart() {
         List<String> missing = new ArrayList<>();
         for (String perm : requiredPermissions) {
@@ -116,15 +105,6 @@ public class MainActivity extends AppCompatActivity {
                 missing.add(perm);
             }
         }
-
-//        // MANAGE_EXTERNAL_STORAGE check (API 30+)
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-//                !Environment.isExternalStorageManager()) {
-//            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-//            startActivity(intent);  // User must enable manually
-//            Toast.makeText(this, "Please enable 'All Files Access'", Toast.LENGTH_LONG).show();
-//            return;
-//        }
 
         if (!missing.isEmpty()) {
             ActivityCompat.requestPermissions(this,

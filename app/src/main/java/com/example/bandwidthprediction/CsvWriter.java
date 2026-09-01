@@ -2,6 +2,7 @@ package com.example.bandwidthprediction;
 
 import android.content.Context;
 import java.io.*;
+import android.os.Environment;
 
 import java.util.Locale;
 
@@ -11,7 +12,12 @@ public class CsvWriter implements Closeable, Flushable {
     private boolean wroteHeader = false;
 
     public CsvWriter(Context ctx, String filename) throws IOException {
-        File dir = ctx.getExternalFilesDir(null);
+//        File dir = ctx.getExternalFilesDir(null);
+        File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "BandwidthLogs");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+
         file = new File(dir, filename);
         boolean exists = file.exists();
         out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file, true), "UTF-8"));

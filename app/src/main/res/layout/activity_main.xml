@@ -4,15 +4,44 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:keepScreenOn="true"
     android:padding="24dp">
 
     <Button
         android:id="@+id/logToggleButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="112dp"
         android:layout_marginTop="316dp"
         android:text="Start Logging"
+
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <RadioGroup
+        android:id="@+id/logMode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="20dp"
+        app:layout_constraintTop_toBottomOf="@+id/logToggleButton"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <RadioButton
+            android:id="@+id/rbUplink"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Uplink"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/rbDownlink"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="20dp"
+            android:text="Downlink" />
+
+    </RadioGroup>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
